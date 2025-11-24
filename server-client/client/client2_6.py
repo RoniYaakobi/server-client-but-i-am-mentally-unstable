@@ -7,6 +7,18 @@ class Client:
     def __init__(self, serv_addr = "127.0.0.1"):
         self.serv_addr = serv_addr
 
+    def tcp_by_size(self, sock):
+        size_bytes = sock.recv(8)
+
+        if size_bytes == b'':
+            return ''
+        size = int(size_bytes)
+        msg = sock.recv(size + 1) # the field delimeter after size adds + 1
+
+        full_msg = size_bytes + msg
+
+        return full_msg
+
     def logtcp(self, dir, byte_data):
         """
         log direction and all TCP byte array data
@@ -125,7 +137,7 @@ class Client:
                 continue
             try :
                 self.send_data(sock,to_send.encode())
-                byte_data = sock.recv(1000)   # todo improve it to recv by message size
+                byte_data = self.tcp_by_size(sock)
                 if byte_data == b'':
                     print ('Seems server disconnected abnormal')
                     break

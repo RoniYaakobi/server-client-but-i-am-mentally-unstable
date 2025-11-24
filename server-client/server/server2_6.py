@@ -16,6 +16,22 @@ class Server:
 		self.all_to_die = False
 		self.threads = []
 
+	def tcp_by_size(self, sock, tid):
+		size_bytes = sock.recv(8)
+
+		if size_bytes == b'':
+			return ''
+		size = int(size_bytes)
+		msg = sock.recv(size + 1) # the field delimeter after size adds + 1
+
+		full_msg = size_bytes + msg
+
+		err = self.check_length(full_msg)
+
+		if err == "":
+			self.send_data(sock, tid ,err)
+		return full_msg
+
 	def logtcp(self, dir, tid, byte_data):
 		"""
 		log direction, tid and all TCP byte array data
@@ -117,17 +133,15 @@ class Server:
 				print('will close due to main server issue')
 				break
 			try:
-				byte_data = sock.recv(1000)  # todo improve it to recv by message size
-				if byte_data == b'':
-					print ('Seems client disconnected')
+				byte_data = self.tcp_by_size(sock, tid)
+				
+				if byte_data == '':
 					break
+
 				self.logtcp('recv',tid, byte_data)
-				err_size = self.check_length(byte_data)
-				if err_size != b'':
-					to_send = err_size
-				else:
-					byte_data = byte_data[9:]   # remove length field
-					to_send , finish = self.handle_request(byte_data)
+				
+				byte_data = byte_data[9:]   # remove length field
+				to_send , finish = self.handle_request(byte_data)
 				if to_send != '':
 					self.send_data(sock, tid , to_send)
 				if finish:
