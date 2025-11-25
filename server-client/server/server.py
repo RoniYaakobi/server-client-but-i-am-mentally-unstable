@@ -88,19 +88,20 @@ class Server:
 		Handle client request and prepare the reply info
 		string:return: reply
 		"""
+
+		code_to_reply = {}
+
+		code_to_reply["TIME"] = ("TIMR", self.get_time)
+		code_to_reply["RAND"] = ("RNDR", self.get_random) 
+		code_to_reply["WHOU"] = ("WHOR", self.get_server_name) 
+		code_to_reply["TIME"] = ("EXTR", lambda : "")
+
 		request_code = request[:4].decode()
+
+		reply = code_to_reply.get(request_code, "ERRR~002~code not supported")
+
 		request = request.decode("utf8")
-		if request_code == 'TIME':
-			reply = 'TIMR' +'~' + self.get_time()
-		elif request_code == 'RAND':
-			reply ='RNDR' + '~' + self.get_random()
-		elif request_code == 'WHOU':
-			reply ='WHOR' + '~' + self.get_server_name()
-		elif request_code == 'EXIT':
-			reply= 'EXTR'
-		else:
-			reply = 'ERRR~002~code not supported'
-			fields = ''
+		
 		return reply.encode()
 
 	def handle_request(self, request):
