@@ -14,8 +14,9 @@ class Client:
         code_to_request["1"] = ("TIME", no_op)
         code_to_request["2"] = ("RAND", no_op) 
         code_to_request["3"] = ("WHOU", no_op)
-        code_to_request["4"] = ("EXEC", self.get_exec_args) 
-        code_to_request["5"] = ("EXIT", no_op)
+        code_to_request["4"] = ("EXEC", self.get_exec_args)
+        code_to_request["5"] = ("DIRC", self.get_path) 
+        code_to_request["6"] = ("EXIT", no_op)
 
         self.code_to_request = code_to_request
 
@@ -25,8 +26,10 @@ class Client:
         reply_to_format["RNDR"] = lambda fields : "Server draw the number: " + fields[0] 
         reply_to_format["WHOR"] = lambda fields : "Server name is: " + fields[0]
         reply_to_format["ERRR"] = lambda fields : "Server return an error: " + fields[0] + " " + fields[1]
-        reply_to_format["EXTR"] = lambda fields : "Server acknowledged the exit message"
         reply_to_format["EXER"] = lambda fields : "Stdout was " + fields[0] if fields != "" else "Empty"
+        reply_to_format["DIRR"] = lambda fields : "Directory: " + fields[0]
+        reply_to_format["EXTR"] = lambda fields : "Server acknowledged the exit message"
+
 
         self.reply_to_format = reply_to_format
 
@@ -77,6 +80,12 @@ class Client:
             return ""
 
         return "~"+"~".join(args)
+    def get_path(self):
+        path = input("Path to view: ")
+        if path != "":
+            return f'~"{path}"'
+
+        return ""
 
 
     def menu(self):
@@ -89,7 +98,8 @@ class Client:
               2. Ask server for random number
               3. Ask server for name
               4. Ask server to run an executable
-              5. Ask server to disconnect""")
+              5. View a directory in the server's file system
+              6. Ask server to disconnect""")
         return input('Input Code > ' )
 
 
@@ -167,7 +177,7 @@ class Client:
                 byte_data = byte_data[9:]  # remove length field
                 self.handle_reply(byte_data)
 
-                if from_user == '5':
+                if from_user == "6":
                     print('Will exit ...')
                     connected = False
                     break

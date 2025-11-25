@@ -23,8 +23,9 @@ class Server:
 		code_to_reply["TIME"] = ("TIMR", self.get_time)
 		code_to_reply["RAND"] = ("RNDR", self.get_random) 
 		code_to_reply["WHOU"] = ("WHOR", self.get_server_name) 
-		code_to_reply["EXIT"] = ("EXTR", self.no_op)
 		code_to_reply["EXEC"] = ("EXER", self.run_executable)
+		code_to_reply["DIRC"] = ("DIRR", self.get_dir)
+		code_to_reply["EXIT"] = ("EXTR", self.no_op)
 
 		self.code_to_reply = code_to_reply
 
@@ -95,12 +96,17 @@ class Server:
 	
 	def run_executable(self, exe, *args):
 		if args == ():
-			output = subprocess.run(executable=exe, args = tuple())
+			output = subprocess.run(executable=exe, capture_output=True, text=True, args = tuple())
 		else:
-			output = subprocess.run(executable=exe, args=args)
+			output = subprocess.run(executable=exe, capture_output=True, text=True, args=args)
 		stdout = output.stdout
 
 		return "~" + (stdout if stdout != None else "")
+	
+	def get_dir(self, path):
+		result = subprocess.run(f"dir {path}", capture_output=True, text=True, shell=True)
+
+		return "~" + result.stdout
 
 	def protocol_build_reply(self, request):
 		"""
