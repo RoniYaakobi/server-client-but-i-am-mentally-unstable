@@ -2,7 +2,7 @@ __author__ = 'Yossi'
 
 # 2.6  client server October 2021
 import socket, random, traceback
-import time, threading, os, datetime
+import time, threading, os, datetime, subprocess
 
 class Server:
 	_instance = None
@@ -15,6 +15,18 @@ class Server:
 	def __init__(self):
 		self.all_to_die = False
 		self.threads = []
+
+		code_to_reply = dict()
+
+		self.no_op = lambda *x: ""
+
+		code_to_reply["TIME"] = ("TIMR", self.get_time)
+		code_to_reply["RAND"] = ("RNDR", self.get_random) 
+		code_to_reply["WHOU"] = ("WHOR", self.get_server_name) 
+		code_to_reply["EXIT"] = ("EXTR", self.no_op)
+		code_to_reply["EXEC"] = ("EXER", self.run_executable)
+
+		self.code_to_reply = code_to_reply
 
 	def tcp_by_size(self, sock, tid):
 		size_bytes = sock.recv(8)
@@ -68,18 +80,27 @@ class Server:
 		return b''
 
 
-	def get_time(self):
+	def get_time(self, *args):
 		"""return local time """
-		return datetime.datetime.now().strftime('%H:%M:%S:%f')
+		return "~" + datetime.datetime.now().strftime('%H:%M:%S:%f')
 
 
-	def get_random(self):
+	def get_random(self, *args):
 		"""return random 1-10 """
-		return str(random.randint(1, 10))
+		return "~" + str(random.randint(1, 10))
 
-	def get_server_name(self):
+	def get_server_name(self, *args):
 		"""return server name from os environment """
-		return os.environ['COMPUTERNAME']
+		return "~" + os.environ['COMPUTERNAME']
+	
+	def run_executable(self, exe, *args):
+		if args == ():
+			output = subprocess.run(executable=exe, args = tuple())
+		else:
+			output = subprocess.run(executable=exe, args=args)
+		stdout = output.stdout
+
+		return "~" + (stdout if stdout != None else "")
 
 	def protocol_build_reply(self, request):
 		"""
@@ -89,18 +110,15 @@ class Server:
 		string:return: reply
 		"""
 
-		code_to_reply = {}
-
-		code_to_reply["TIME"] = ("TIMR", self.get_time)
-		code_to_reply["RAND"] = ("RNDR", self.get_random) 
-		code_to_reply["WHOU"] = ("WHOR", self.get_server_name) 
-		code_to_reply["TIME"] = ("EXTR", lambda : "")
-
 		request_code = request[:4].decode()
 
-		reply = code_to_reply.get(request_code, "ERRR~002~code not supported")
+		code, func = self.code_to_reply.get(request_code, ("ERRR~002~code not supported", self.no_op))
 
 		request = request.decode("utf8")
+
+		args = request[5:].split("~") # ignore opcode and start reading the arguments
+
+		reply = f"{code}{func(*args)}"
 		
 		return reply.encode()
 
@@ -168,12 +186,9 @@ class Server:
 		4. every X clients limit will exit
 		"""
 		srv_sock = socket.socket()
-		input("0")
 		srv_sock.bind(('0.0.0.0', 42006))
-		input("1")
 		srv_sock.listen(20)
-		input("2")
-		#next line release the port
+
 		srv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
 		i = 1

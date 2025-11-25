@@ -7,6 +7,29 @@ class Client:
     def __init__(self, serv_addr = "127.0.0.1"):
         self.serv_addr = serv_addr
 
+        code_to_request = dict()
+
+        no_op = lambda *x: ""
+
+        code_to_request["1"] = ("TIME", no_op)
+        code_to_request["2"] = ("RAND", no_op) 
+        code_to_request["3"] = ("WHOU", no_op)
+        code_to_request["4"] = ("EXEC", self.get_exec_args) 
+        code_to_request["5"] = ("EXIT", no_op)
+
+        self.code_to_request = code_to_request
+
+        reply_to_format = dict()
+
+        reply_to_format["TIMR"] = lambda fields : "The Server time is: " + fields[0]
+        reply_to_format["RNDR"] = lambda fields : "Server draw the number: " + fields[0] 
+        reply_to_format["WHOR"] = lambda fields : "Server name is: " + fields[0]
+        reply_to_format["ERRR"] = lambda fields : "Server return an error: " + fields[0] + " " + fields[1]
+        reply_to_format["EXTR"] = lambda fields : "Server acknowledged the exit message"
+        reply_to_format["EXER"] = lambda fields : "Stdout was " + fields[0] if fields != "" else "Empty"
+
+        self.reply_to_format = reply_to_format
+
     def tcp_by_size(self, sock):
         size_bytes = sock.recv(8)
 
@@ -41,18 +64,33 @@ class Client:
         sock.send(bytearray_data)
         self.logtcp('sent', bytearray_data)
 
+    def get_exec_args(self):
+        args = []
+        arg = input("Path of the executable: ")
+        
+        while arg != "":
+            args.append(arg)
+            arg = input("Any additional arguments? Enter an empty line if not. ")
+        
+        if len(args) < 1:
+            print("You must have at least the executable path!")
+            return ""
+
+        return "~"+"~".join(args)
+
 
     def menu(self):
         """
         show client menu
         return: string with selection
         """
-        print('\n  1. ask for time')
-        print('\n  2. ask for random')
-        print('\n  3. ask for name')
-        print('\n  4. notify exit')
-        print('\n  (5. some invalid data for testing)')
-        return input('Input 1 - 4 > ' )
+        print("""Choose the operation you want to make:
+              1. Ask server for time
+              2. Ask server for random number
+              3. Ask server for name
+              4. Ask server to run an executable
+              5. Ask server to disconnect""")
+        return input('Input Code > ' )
 
 
     def protocol_build_request(self, from_user):
@@ -60,18 +98,9 @@ class Client:
         build the request according to user selection and protocol
         return: string - msg code
         """
-        if from_user == '1':
-            return 'TIME'
-        elif from_user == '2':
-            return 'RAND'
-        elif from_user == '3':
-            return 'WHOU'
-        elif from_user == '4':
-            return 'EXIT'
-        elif from_user == '5':
-            return input("enter free text data to send> ")
-        else:
-            return ''
+        code, func = self.code_to_request[from_user]
+
+        return f"{code}{func()}"
 
 
     def protocol_parse_reply(self, reply):
@@ -83,21 +112,14 @@ class Client:
         to_show = 'Invalid reply from server'
         try:
             reply = reply.decode()
+            fields = []
             if '~' in reply:
                 fields = reply.split('~')
             code = reply[:4]
-            if code == 'TIMR':
-                to_show = 'The Server time is: ' + fields[1]
-            elif code == 'RNDR':
-                to_show = 'Server draw the number: ' +  fields[1]
-            elif code == 'WHOR':
-                to_show = 'Server name is: ' +  fields[1]
-            elif code == 'ERRR':
-                to_show = 'Server return an error: ' + fields[1] + ' ' + fields[2]
-            elif code == 'EXTR':
-                to_show = 'Server acknowledged the exit message';
+            format = self.reply_to_format[code]
+            to_show = format(fields[1:])
         except:
-            print ('Server replay bad format')
+            print('Server replay bad format')
         return to_show
 
 
@@ -145,7 +167,7 @@ class Client:
                 byte_data = byte_data[9:]  # remove length field
                 self.handle_reply(byte_data)
 
-                if from_user == '4':
+                if from_user == '5':
                     print('Will exit ...')
                     connected = False
                     break
