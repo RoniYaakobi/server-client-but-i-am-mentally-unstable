@@ -1,7 +1,9 @@
 __author__ = 'Yossi'
 # 2.6  client server October 2021
 
-import socket, sys,traceback
+
+from tcp_by_size import send_with_size, recv_by_size
+import socket, sys, traceback
 
 class Client:
     def __init__(self, serv_addr = "127.0.0.1"):
@@ -33,39 +35,6 @@ class Client:
 
         self.reply_to_format = reply_to_format
 
-    def tcp_by_size(self, sock):
-        size_bytes = sock.recv(8)
-
-        if size_bytes == b'':
-            return ''
-        size = int(size_bytes)
-        msg = sock.recv(size + 1) # the field delimeter after size adds + 1
-
-        full_msg = size_bytes + msg
-
-        return full_msg
-
-    def logtcp(self, dir, byte_data):
-        """
-        log direction and all TCP byte array data
-        return: void
-        """
-        if dir == 'sent':
-            print(f'C LOG:Sent     >>>{byte_data}')
-        else:
-            print(f'C LOG:Recieved <<<{byte_data}')
-
-
-    def send_data(self, sock, bdata):
-        """
-        send to client byte array data
-        will add 8 bytes message length as first field
-        e.g. from 'abcd' will send  b'00000004~abcd'
-        return: void
-        """
-        bytearray_data = str(len(bdata)).zfill(8).encode() + b'~' + bdata
-        sock.send(bytearray_data)
-        self.logtcp('sent', bytearray_data)
 
     def get_exec_args(self):
         args = []
@@ -168,13 +137,11 @@ class Client:
                 print("Selection error try again")
                 continue
             try :
-                self.send_data(sock,to_send.encode())
-                byte_data = self.tcp_by_size(sock)
+                send_with_size(sock, to_send.encode())
+                byte_data = recv_by_size(sock)
                 if byte_data == b'':
                     print ('Seems server disconnected abnormal')
                     break
-                self.logtcp('recv',byte_data)
-                byte_data = byte_data[9:]  # remove length field
                 self.handle_reply(byte_data)
 
                 if from_user == "6":

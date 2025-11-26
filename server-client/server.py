@@ -1,6 +1,7 @@
 __author__ = 'Yossi'
 
 # 2.6  client server October 2021
+from tcp_by_size import send_with_size, recv_by_size
 import socket, random, traceback
 import time, threading, os, datetime, subprocess
 
@@ -28,45 +29,6 @@ class Server:
 		code_to_reply["EXIT"] = ("EXTR", self.no_op)
 
 		self.code_to_reply = code_to_reply
-
-	def tcp_by_size(self, sock, tid):
-		size_bytes = sock.recv(8)
-
-		if size_bytes == b'':
-			return ''
-		size = int(size_bytes)
-		msg = sock.recv(size + 1) # the field delimeter after size adds + 1
-
-		full_msg = size_bytes + msg
-
-		err = self.check_length(full_msg)
-
-		if err == "":
-			self.send_data(sock, tid ,err)
-		return full_msg
-
-	def logtcp(self, dir, tid, byte_data):
-		"""
-		log direction, tid and all TCP byte array data
-		return: void
-		"""
-		if dir == 'sent':
-			print(f'{tid} S LOG:Sent     >>> {byte_data}')
-		else:
-			print(f'{tid} S LOG:Recieved <<< {byte_data}')
-
-	def send_data(self, sock, tid, bdata):
-		"""
-		send to client byte array data
-		will add 8 bytes message length as first field
-		e.g. from 'abcd' will send  b'00000004~abcd'
-		return: void
-		"""
-		bytearray_data = str(len(bdata)).zfill(8).encode() + b'~' + bdata
-		sock.send(bytearray_data)
-		self.logtcp('sent',tid, bytearray_data)
-		print("")
-
 
 	def check_length(self, message):
 		"""
@@ -158,17 +120,15 @@ class Server:
 				print('will close due to main server issue')
 				break
 			try:
-				byte_data = self.tcp_by_size(sock, tid)
+				byte_data = recv_by_size(sock)
 				
 				if byte_data == '':
+					send_with_size(sock, b'ERRR~003~Bad Format, incorrect message length or data')
 					break
-
-				self.logtcp('recv',tid, byte_data)
 				
-				byte_data = byte_data[9:]   # remove length field
 				to_send , finish = self.handle_request(byte_data)
 				if to_send != '':
-					self.send_data(sock, tid , to_send)
+					send_with_size(sock, to_send)
 				if finish:
 					time.sleep(1)
 					break
