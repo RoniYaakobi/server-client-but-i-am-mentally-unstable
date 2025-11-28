@@ -1,7 +1,7 @@
 __author__ = 'Yossi'
 
 # 2.6  client server October 2021
-from tcp_by_size import send_with_size, recv_by_size
+from tcp_by_size import send_with_size, recv_by_size, DELIMETER
 import socket, random, traceback
 import time, threading, os, datetime, subprocess
 
@@ -26,6 +26,8 @@ class Server:
 		code_to_reply["WHOU"] = ("WHOR", self.get_server_name) 
 		code_to_reply["EXEC"] = ("EXER", self.run_executable)
 		code_to_reply["DIRC"] = ("DIRR", self.get_dir)
+		code_to_reply["DELP"] = ("DELR", self.del_path)
+		code_to_reply["COPY"] = ("CPYR", self.copy)
 		code_to_reply["EXIT"] = ("EXTR", self.no_op)
 
 		self.code_to_reply = code_to_reply
@@ -45,16 +47,16 @@ class Server:
 
 	def get_time(self, *args):
 		"""return local time """
-		return "~" + datetime.datetime.now().strftime('%H:%M:%S:%f')
+		return DELIMETER + datetime.datetime.now().strftime('%H:%M:%S:%f')
 
 
 	def get_random(self, *args):
 		"""return random 1-10 """
-		return "~" + str(random.randint(1, 10))
+		return DELIMETER + str(random.randint(1, 10))
 
 	def get_server_name(self, *args):
 		"""return server name from os environment """
-		return "~" + os.environ['COMPUTERNAME']
+		return DELIMETER + os.environ['COMPUTERNAME']
 	
 	def run_executable(self, exe, *args):
 		if args == ():
@@ -63,12 +65,32 @@ class Server:
 			output = subprocess.run(executable=exe, capture_output=True, text=True, args=args)
 		stdout = output.stdout
 
-		return "~" + (stdout if stdout != None else "")
+		return DELIMETER + (stdout if stdout != None else "")
 	
 	def get_dir(self, path):
-		result = subprocess.run(f"dir {path}", capture_output=True, text=True, shell=True)
+		result = subprocess.run(f'dir "{path}"', capture_output=True, text=True, shell=True)
 
-		return "~" + result.stdout
+		return DELIMETER + result.stdout
+	
+	def del_path(self, path):
+		if os.path.isfile(path):
+			result = subprocess.run(f'del "{path}"', capture_output=True, text=True, shell=True)
+		elif os.path.isdir(path):
+			result = subprocess.run(f'rmdir /s /q "{path}"', capture_output=True, text=True, shell=True)
+		else:
+			raise FileNotFoundError
+
+		return DELIMETER + result.stdout
+	
+	def copy(self, source_path, destination_path):
+		if os.path.isfile(source_path):
+			result = subprocess.run(f'copy "{source_path}" "{destination_path}"', capture_output=True, text=True, shell=True)
+		elif os.path.isdir(source_path):
+			result = subprocess.run(f'robocopy "{source_path}" "{destination_path}" /E', capture_output=True, text=True, shell=True)
+		else:
+			raise FileNotFoundError
+
+		return DELIMETER + result.stdout
 
 	def protocol_build_reply(self, request):
 		"""
@@ -84,7 +106,7 @@ class Server:
 
 		request = request.decode("utf8")
 
-		args = request[5:].split("~") # ignore opcode and start reading the arguments
+		args = request[5:].split(DELIMETER) # ignore opcode and start reading the arguments
 
 		reply = f"{code}{func(*args)}"
 		

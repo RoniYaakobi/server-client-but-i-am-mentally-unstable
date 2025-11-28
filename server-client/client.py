@@ -2,7 +2,7 @@ __author__ = 'Yossi'
 # 2.6  client server October 2021
 
 
-from tcp_by_size import send_with_size, recv_by_size
+from tcp_by_size import send_with_size, recv_by_size, DELIMETER
 import socket, sys, traceback
 
 class Client:
@@ -17,8 +17,10 @@ class Client:
         code_to_request["2"] = ("RAND", no_op) 
         code_to_request["3"] = ("WHOU", no_op)
         code_to_request["4"] = ("EXEC", self.get_exec_args)
-        code_to_request["5"] = ("DIRC", self.get_path) 
-        code_to_request["6"] = ("EXIT", no_op)
+        code_to_request["5"] = ("DIRC", self.get_path)
+        code_to_request["6"] = ("DELP", self.get_path)
+        code_to_request["7"] = ("COPY", self.get_copy_paths)
+        code_to_request["8"] = ("EXIT", no_op)
 
         self.code_to_request = code_to_request
 
@@ -30,6 +32,8 @@ class Client:
         reply_to_format["ERRR"] = lambda fields : "Server return an error: " + fields[0] + " " + fields[1]
         reply_to_format["EXER"] = lambda fields : "Stdout was " + fields[0] if fields != "" else "Empty"
         reply_to_format["DIRR"] = lambda fields : "Directory: " + fields[0]
+        reply_to_format["DELR"] = lambda fields : "Path deleted." if fields[0] == "" else "Server output: " + fields[0]
+        reply_to_format["CPYR"] = lambda fields : "Copied successfully" if fields[0] == "" else "Server output: " + fields[0]
         reply_to_format["EXTR"] = lambda fields : "Server acknowledged the exit message"
 
 
@@ -48,13 +52,26 @@ class Client:
             print("You must have at least the executable path!")
             return ""
 
-        return "~"+"~".join(args)
+        return DELIMETER + DELIMETER.join(args)
+    
     def get_path(self):
-        path = input("Path to view: ")
+        path = input("Choose the path: ")
         if path != "":
-            return f'~"{path}"'
+            return f'{DELIMETER}{path}'
 
         return ""
+    
+    def get_copy_paths(self):
+        path1 = input("Choose source path: ")
+        if path1 == "":
+            return ""
+        
+        path2 = input("Choose destination path: ")
+        if path2 != "":
+            return f'{DELIMETER}{path1}{DELIMETER}{path2}'
+
+        return ""
+
 
 
     def menu(self):
@@ -66,9 +83,11 @@ class Client:
               1. Ask server for time
               2. Ask server for random number
               3. Ask server for name
-              4. Ask server to run an executable
+              4. Ask server to run an executables
               5. View a directory in the server's file system
-              6. Ask server to disconnect""")
+              6. Delete a directory
+              7. Copy from a path to another path
+              8. Ask server to disconnect""")
         return input('Input Code > ' )
 
 
@@ -92,8 +111,8 @@ class Client:
         try:
             reply = reply.decode()
             fields = []
-            if '~' in reply:
-                fields = reply.split('~')
+            if DELIMETER in reply:
+                fields = reply.split(DELIMETER)
             code = reply[:4]
             format = self.reply_to_format[code]
             to_show = format(fields[1:])
@@ -144,7 +163,7 @@ class Client:
                     break
                 self.handle_reply(byte_data)
 
-                if from_user == "6":
+                if from_user == "8":
                     print('Will exit ...')
                     connected = False
                     break
