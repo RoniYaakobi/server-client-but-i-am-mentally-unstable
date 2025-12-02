@@ -3,11 +3,13 @@ __author__ = 'Yossi'
 
 
 from tcp_by_size import send_with_size, recv_by_size, DELIMETER
+from ftp_protocol import recv_file
 import socket, sys, traceback
 
 class Client:
     def __init__(self, serv_addr = "127.0.0.1"):
         self.serv_addr = serv_addr
+        self.sock = socket.socket()
 
         code_to_request = dict()
 
@@ -20,7 +22,8 @@ class Client:
         code_to_request["5"] = ("DIRC", self.get_path)
         code_to_request["6"] = ("DELP", self.get_path)
         code_to_request["7"] = ("COPY", self.get_copy_paths)
-        code_to_request["8"] = ("EXIT", no_op)
+        code_to_request["8"] = ("DWLD", self.get_path)
+        code_to_request["9"] = ("EXIT", no_op)
 
         self.code_to_request = code_to_request
 
@@ -34,6 +37,7 @@ class Client:
         reply_to_format["DIRR"] = lambda fields : "Directory: " + fields[0]
         reply_to_format["DELR"] = lambda fields : "Path deleted." if fields[0] == "" else "Server output: " + fields[0]
         reply_to_format["CPYR"] = lambda fields : "Copied successfully" if fields[0] == "" else "Server output: " + fields[0]
+        reply_to_format["DWNR"] = lambda fields : fields[0]
         reply_to_format["EXTR"] = lambda fields : "Server acknowledged the exit message"
 
 
@@ -87,7 +91,8 @@ class Client:
               5. View a directory in the server's file system
               6. Delete a directory
               7. Copy from a path to another path
-              8. Ask server to disconnect""")
+              8. Transfer a file from the server to the client
+              9. Ask server to disconnect""")
         return input('Input Code > ' )
 
 
@@ -139,11 +144,11 @@ class Client:
         """
         connected = False
 
-        sock= socket.socket()
+        
 
         port = 42006
         try:
-            sock.connect((self.serv_addr,port))
+            self.sock.connect((self.serv_addr,port))
             print (f'Connect succeeded {self.serv_addr}:{port}')
             connected = True
         except:
@@ -156,14 +161,16 @@ class Client:
                 print("Selection error try again")
                 continue
             try :
-                send_with_size(sock, to_send.encode())
-                byte_data = recv_by_size(sock)
+                send_with_size(self.sock, to_send.encode())
+                if from_user == "8":
+                    recv_file(self.sock, self.get_path()[1:]) # ignore the delimeter
+                byte_data = recv_by_size(self.sock)
                 if byte_data == b'':
                     print ('Seems server disconnected abnormal')
                     break
                 self.handle_reply(byte_data)
 
-                if from_user == "8":
+                if from_user == "9":
                     print('Will exit ...')
                     connected = False
                     break
@@ -175,7 +182,7 @@ class Client:
                 print(traceback.format_exc())
                 break
         print ('Bye')
-        sock.close()
+        self.sock.close()
 
 
 if __name__ == '__main__':

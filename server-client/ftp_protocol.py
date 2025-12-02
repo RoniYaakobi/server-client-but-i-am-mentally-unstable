@@ -9,7 +9,7 @@ FTP_FINISH = b"EnD_0f_Tr@N$$m!$$!0N"
 
 
 def recv_file(sock, path = r"C:\Users\roniy\Downloads"):
-    if not os.path.isfile(path):
+    if not os.path.isfile(path) and os.path.exists(path):
         path = os.path.join(path, datetime.now().strftime("%Y-%m-%d-%H-%M-%S.txt"))
 
     with open(path, "wb") as f:
@@ -18,6 +18,7 @@ def recv_file(sock, path = r"C:\Users\roniy\Downloads"):
             if chunk == FTP_FINISH:
                 break
             f.write(chunk)
+    return "FTP Success"
 
     
 def send_file(sock, path):
@@ -30,3 +31,5 @@ def send_file(sock, path):
             send_with_size(sock, chunk)
             chunk = f.read(MAX_DATA_CHUNK_SIZE)
     send_with_size(sock, FTP_FINISH)
+
+    return "FTP Success"

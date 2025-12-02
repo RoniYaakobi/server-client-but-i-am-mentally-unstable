@@ -2,6 +2,7 @@ __author__ = 'Yossi'
 
 # 2.6  client server October 2021
 from tcp_by_size import send_with_size, recv_by_size, DELIMETER
+from ftp_protocol import send_file
 import socket, random, traceback
 import time, threading, os, datetime, subprocess
 
@@ -28,11 +29,12 @@ class Server:
 		code_to_reply["DIRC"] = ("DIRR", self.get_dir)
 		code_to_reply["DELP"] = ("DELR", self.del_path)
 		code_to_reply["COPY"] = ("CPYR", self.copy)
+		code_to_reply["DWLD"] = ("DWNR", self.send_to_client)
 		code_to_reply["EXIT"] = ("EXTR", self.no_op)
 
 		self.code_to_reply = code_to_reply
 
-	def check_length(self, message):
+	def check_length(self, sock, message):
 		"""
 		check message length
 		return: string - error message
@@ -45,20 +47,20 @@ class Server:
 		return b''
 
 
-	def get_time(self, *args):
+	def get_time(self, sock, *args):
 		"""return local time """
 		return DELIMETER + datetime.datetime.now().strftime('%H:%M:%S:%f')
 
 
-	def get_random(self, *args):
+	def get_random(self, sock, *args):
 		"""return random 1-10 """
 		return DELIMETER + str(random.randint(1, 10))
 
-	def get_server_name(self, *args):
+	def get_server_name(self, sock, *args):
 		"""return server name from os environment """
 		return DELIMETER + os.environ['COMPUTERNAME']
 	
-	def run_executable(self, exe, *args):
+	def run_executable(self, sock, exe, *args):
 		if args == ():
 			output = subprocess.run(executable=exe, capture_output=True, text=True, args = tuple())
 		else:
@@ -67,12 +69,12 @@ class Server:
 
 		return DELIMETER + (stdout if stdout != None else "")
 	
-	def get_dir(self, path):
+	def get_dir(self, sock, path):
 		result = subprocess.run(f'dir "{path}"', capture_output=True, text=True, shell=True)
 
 		return DELIMETER + result.stdout
 	
-	def del_path(self, path):
+	def del_path(self, sock, path):
 		if os.path.isfile(path):
 			result = subprocess.run(f'del "{path}"', capture_output=True, text=True, shell=True)
 		elif os.path.isdir(path):
@@ -82,7 +84,7 @@ class Server:
 
 		return DELIMETER + result.stdout
 	
-	def copy(self, source_path, destination_path):
+	def copy(self, sock, source_path, destination_path):
 		if os.path.isfile(source_path):
 			result = subprocess.run(f'copy "{source_path}" "{destination_path}"', capture_output=True, text=True, shell=True)
 		elif os.path.isdir(source_path):
@@ -91,8 +93,11 @@ class Server:
 			raise FileNotFoundError
 
 		return DELIMETER + result.stdout
+	
+	def send_to_client(self, sock, path):
+		return DELIMETER + send_file(sock, path)
 
-	def protocol_build_reply(self, request):
+	def protocol_build_reply(self, sock, request):
 		"""
 		Application Business Logic
 		function despatcher ! for each code will get to some function that handle specific request
@@ -108,18 +113,18 @@ class Server:
 
 		args = request[5:].split(DELIMETER) # ignore opcode and start reading the arguments
 
-		reply = f"{code}{func(*args)}"
+		reply = f"{code}{func(sock, *args)}"
 		
 		return reply.encode()
 
-	def handle_request(self, request):
+	def handle_request(self, sock, request):
 		"""
 		Hadle client request
 		tuple :return: return message to send to client and bool if to close the client socket
 		"""
 		try:
 			request_code = request[:4]
-			to_send = self.protocol_build_reply(request)
+			to_send = self.protocol_build_reply(sock, request)
 			if request_code == b'EXIT':
 				return to_send, True
 		except Exception as err:
@@ -148,7 +153,7 @@ class Server:
 					send_with_size(sock, b'ERRR~003~Bad Format, incorrect message length or data')
 					break
 				
-				to_send , finish = self.handle_request(byte_data)
+				to_send , finish = self.handle_request(sock, byte_data)
 				if to_send != '':
 					send_with_size(sock, to_send)
 				if finish:
