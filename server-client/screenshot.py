@@ -56,7 +56,7 @@ class ScreenCapture:
 
         GDI32.GetDIBits(hdc_mem, hbitmap, 0, ScreenCapture.HEIGHT, buffer, ctypes.byref(bmp_info), 0) # Moves the data into the buffer
 
-        ScreenCapture.write_bitmap_format(ScreenCapture.WIDTH, ScreenCapture.HEIGHT, buffer, path)
+        ScreenCapture.write_bitmap_format(buffer, path)
 
         GDI32.DeleteObject(hbitmap) # Free memory because c doesn't know garbage collector
         GDI32.DeleteDC(hdc_mem) # Free memory because c doesn't know garbage collector
