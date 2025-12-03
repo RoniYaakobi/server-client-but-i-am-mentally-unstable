@@ -5,32 +5,30 @@ DIB_HEADER_SIZE = 40
 BITS_PER_PIXEL = 24
 PIXEL_OFFSET = BMP_FILE_HEADER_SIZE + DIB_HEADER_SIZE
 
+
+USER32 = ctypes.windll.user32
+GDI32 = ctypes.windll.gdi32
 SRCCOPY = 0x00CC0020
 
 def int_to_bytes(x):
     return (x).to_bytes(4, 'little')
 
-class take:
-    def __init__(self):
-        # Get references to the dlls 
-        self.user32 = ctypes.windll.user32
-        self.gdi32 = ctypes.windll.gdi32
+class ScreenCapture:
+    WIDTH = USER32.GetSystemMetrics(0)
+    HEIGHT = GDI32.GetSystemMetrics(1)
 
-        # Get the device dimensions from the windows API
-        self.width = self.user32.GetSystemMetrics(0)
-        self.height = self.user32.GetSystemMetrics(1)
-
-    def save_screenshot(self,path):
+    @staticmethod
+    def save_screenshot(path):
         # Prepare a context for the screen and memory for the screenshot
-        hdc_screen = self.user32.GetDC(0)
-        hdc_mem = self.gdi32.CreateCompatibleDC(hdc_screen)
+        hdc_screen = USER32.GetDC(0)
+        hdc_mem = GDI32.CreateCompatibleDC(hdc_screen)
 
         # Build a bitmap and inject the reference to the memory object
-        hbitmap = self.gdi32.CreateCompatibleBitmap(hdc_screen, self.width, self.height)
-        self.gdi32.SelectObject(hdc_mem, hbitmap)
+        hbitmap = GDI32.CreateCompatibleBitmap(hdc_screen, ScreenCapture.WIDTH, ScreenCapture.HEIGHT)
+        GDI32.SelectObject(hdc_mem, hbitmap)
 
         # Fast copy all the screenshot into the memory for the bitmap
-        self.gdi32.BitBlt(hdc_mem, 0, 0, self.width, self.height, hdc_screen, 0, 0, SRCCOPY)
+        GDI32.BitBlt(hdc_mem, 0, 0, ScreenCapture.WIDTH, ScreenCapture.HEIGHT, hdc_screen, 0, 0, SRCCOPY)
 
         # Make a c struct which contains two fields, one 40 bytes, the other 0
         class BITMAPINFO(ctypes.Structure):
@@ -42,10 +40,10 @@ class take:
         # Make the struct and populate the bit map header with fields
         bmp_info = BITMAPINFO()
         bmp_info.bmiHeader[0:4] = int_to_bytes(40)  # length of header
-        bmp_info.bmiHeader[4:8] = int_to_bytes(self.width)  # width of picture
+        bmp_info.bmiHeader[4:8] = int_to_bytes(ScreenCapture.WIDTH)  # width of picture
 
         # Height of picture, negative to make the bitmap be read from up down and not down up
-        bmp_info.bmiHeader[8:12] = (-self.height).to_bytes(4, 'little', signed=True)  
+        bmp_info.bmiHeader[8:12] = (-ScreenCapture.HEIGHT).to_bytes(4, 'little', signed=True)  
 
         # A field that is not used anymore
         bmp_info.bmiHeader[12:14] = (1).to_bytes(2, 'little')
@@ -54,25 +52,25 @@ class take:
         bmp_info.bmiHeader[14:16] = (BITS_PER_PIXEL).to_bytes(2, 'little')
 
 
-        buffer = ctypes.create_string_buffer(self.height * self.width * 3)
+        buffer = ctypes.create_string_buffer(ScreenCapture.HEIGHT * ScreenCapture.WIDTH * 3)
 
-        self.gdi32.GetDIBits(hdc_mem, hbitmap, 0, self.height, buffer, ctypes.byref(bmp_info), 0) # Moves the data into the buffer
+        GDI32.GetDIBits(hdc_mem, hbitmap, 0, ScreenCapture.HEIGHT, buffer, ctypes.byref(bmp_info), 0) # Moves the data into the buffer
 
-        self.write_bitmap_format(self.width, self.height, buffer, path)
+        ScreenCapture.write_bitmap_format(ScreenCapture.WIDTH, ScreenCapture.HEIGHT, buffer, path)
 
-        self.gdi32.DeleteObject(hbitmap) # Free memory because c doesn't know garbage collector
-        self.gdi32.DeleteDC(hdc_mem) # Free memory because c doesn't know garbage collector
-        self.user32.ReleaseDC(0, hdc_screen) # Free memory because c doesn't know garbage collector
+        GDI32.DeleteObject(hbitmap) # Free memory because c doesn't know garbage collector
+        GDI32.DeleteDC(hdc_mem) # Free memory because c doesn't know garbage collector
+        USER32.ReleaseDC(0, hdc_screen) # Free memory because c doesn't know garbage collector
 
-
-    def write_bitmap_format(self, width, height, buffer, path):
+    @staticmethod
+    def write_bitmap_format(buffer, path):
         with open(path, mode = "wb") as screenshot:
             # File header
             screenshot.write(b"BM") # BM header
 
-            row_bytes = width * 3
+            row_bytes = ScreenCapture.WIDTH * 3
             padding = (4 - (row_bytes % 4)) % 4
-            pixel_data_size = (row_bytes + padding) * height
+            pixel_data_size = (row_bytes + padding) * ScreenCapture.HEIGHT
             file_size = BMP_FILE_HEADER_SIZE + DIB_HEADER_SIZE + pixel_data_size
             size_bytes = file_size.to_bytes(4, 'little')
             screenshot.write(size_bytes) # Size of file
@@ -84,8 +82,8 @@ class take:
             # BMP header
 
             screenshot.write(int_to_bytes(DIB_HEADER_SIZE)) # BMP header size
-            screenshot.write(int_to_bytes(width)) # width 
-            screenshot.write((-height).to_bytes(4, 'little',signed = True)) # height in a format to be read top bottom
+            screenshot.write(int_to_bytes(ScreenCapture.WIDTH)) # width 
+            screenshot.write((-ScreenCapture.HEIGHT).to_bytes(4, 'little',signed = True)) # height in a format to be read top bottom
             screenshot.write((1).to_bytes(2, 'little')) # planes don't matter
             screenshot.write((BITS_PER_PIXEL).to_bytes(2, 'little')) # 24 bits = 3 bytes = RGB
             screenshot.write(zero) # no compression
@@ -96,11 +94,8 @@ class take:
             screenshot.write(zero) # no important colors
 
             # Write all data with the proper padding
-            for y in range(height):
-                row_start = y * width * 3
-                row_end = row_start + width * 3
+            for y in range(ScreenCapture.HEIGHT):
+                row_start = y * ScreenCapture.WIDTH * 3
+                row_end = row_start + ScreenCapture.WIDTH * 3
                 screenshot.write(buffer[row_start:row_end]) # write actual bytes
                 screenshot.write(b'\x00' * padding)  # pad to 4 bytes
-
-
-take().save_screenshot(r"C:\Users\roniy\server-client-but-i-am-mentally-unstable\sussy.bmp")
