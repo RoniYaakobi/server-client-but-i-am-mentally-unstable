@@ -23,7 +23,8 @@ class Client:
         code_to_request["6"] = ("DELP", self.get_path)
         code_to_request["7"] = ("COPY", self.get_copy_paths)
         code_to_request["8"] = ("DWLD", self.get_path)
-        code_to_request["9"] = ("EXIT", no_op)
+        code_to_request["9"] = ("SCRN", self.get_path)
+        code_to_request["10"] = ("EXIT", no_op)
 
         self.code_to_request = code_to_request
 
@@ -38,6 +39,7 @@ class Client:
         reply_to_format["DELR"] = lambda fields : "Path deleted." if fields[0] == "" else "Server output: " + fields[0]
         reply_to_format["CPYR"] = lambda fields : "Copied successfully" if fields[0] == "" else "Server output: " + fields[0]
         reply_to_format["DWNR"] = lambda fields : fields[0]
+        reply_to_format["SCNR"] = lambda fields : fields[0]
         reply_to_format["EXTR"] = lambda fields : "Server acknowledged the exit message"
 
 
@@ -92,7 +94,8 @@ class Client:
               6. Delete a directory
               7. Copy from a path to another path
               8. Transfer a file from the server to the client
-              9. Ask server to disconnect""")
+              9. Get a screenshot from the server
+              10.Ask server to disconnect""")
         return input('Input Code > ' )
 
 
@@ -162,7 +165,7 @@ class Client:
                 continue
             try :
                 send_with_size(self.sock, to_send.encode())
-                if from_user == "8":
+                if from_user == "8" or from_user == "9":
                     recv_file(self.sock, self.get_path()[1:]) # ignore the delimeter
                 byte_data = recv_by_size(self.sock)
                 if byte_data == b'':
@@ -170,7 +173,7 @@ class Client:
                     break
                 self.handle_reply(byte_data)
 
-                if from_user == "9":
+                if from_user == "10":
                     print('Will exit ...')
                     connected = False
                     break

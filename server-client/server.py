@@ -1,6 +1,7 @@
 __author__ = 'Yossi'
 
 # 2.6  client server October 2021
+from screenshot import ScreenCapture
 from tcp_by_size import send_with_size, recv_by_size, DELIMETER
 from ftp_protocol import send_file
 import socket, random, traceback
@@ -30,6 +31,7 @@ class Server:
 		code_to_reply["DELP"] = ("DELR", self.del_path)
 		code_to_reply["COPY"] = ("CPYR", self.copy)
 		code_to_reply["DWLD"] = ("DWNR", self.send_to_client)
+		code_to_reply["SCRN"] = ("SCNR", self.send_screenshot)
 		code_to_reply["EXIT"] = ("EXTR", self.no_op)
 
 		self.code_to_reply = code_to_reply
@@ -95,6 +97,10 @@ class Server:
 		return DELIMETER + result.stdout
 	
 	def send_to_client(self, sock, path):
+		return DELIMETER + send_file(sock, path)
+	
+	def send_screenshot(self, sock, path):
+		ScreenCapture.save_screenshot(path)
 		return DELIMETER + send_file(sock, path)
 
 	def protocol_build_reply(self, sock, request):

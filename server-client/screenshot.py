@@ -99,3 +99,6 @@ class ScreenCapture:
                 row_end = row_start + ScreenCapture.WIDTH * 3
                 screenshot.write(buffer[row_start:row_end]) # write actual bytes
                 screenshot.write(b'\x00' * padding)  # pad to 4 bytes
+
+if __name__ == "__main__":
+    ScreenCapture.save_screenshot(r"C:\Users\roniy\Downloads\testing.bmp")
