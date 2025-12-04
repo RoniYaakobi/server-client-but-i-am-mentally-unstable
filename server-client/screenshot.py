@@ -14,8 +14,10 @@ def int_to_bytes(x):
     return (x).to_bytes(4, 'little')
 
 class ScreenCapture:
-    WIDTH = USER32.GetSystemMetrics(0)
-    HEIGHT = USER32.GetSystemMetrics(1)
+    hdc_screen = USER32.GetDC(0)
+    WIDTH = GDI32.GetDeviceCaps(hdc_screen, 118)  # HORZRES
+    HEIGHT = GDI32.GetDeviceCaps(hdc_screen, 117) # VERTRES
+    USER32.ReleaseDC(0, hdc_screen)
 
     @staticmethod
     def save_screenshot(path):
