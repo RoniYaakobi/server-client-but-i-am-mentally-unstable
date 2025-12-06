@@ -1,4 +1,8 @@
 import ctypes
+import socket
+from ftp_protocol import MAX_DATA_CHUNK_SIZE, FTP_FINISH
+import tcp_by_size
+from tcp_by_size import send_with_size
 
 BMP_FILE_HEADER_SIZE = 14
 DIB_HEADER_SIZE = 40
@@ -20,7 +24,7 @@ class ScreenCapture:
     USER32.ReleaseDC(0, hdc_screen)
 
     @staticmethod
-    def save_screenshot(path):
+    def take_screenshot(path: str | None = r"C:\screenshot.bmp", sock: socket.socket | None = None):
         # Prepare a context for the screen and memory for the screenshot
         hdc_screen = USER32.GetDC(0)
         hdc_mem = GDI32.CreateCompatibleDC(hdc_screen)
@@ -58,11 +62,22 @@ class ScreenCapture:
 
         GDI32.GetDIBits(hdc_mem, hbitmap, 0, ScreenCapture.HEIGHT, buffer, ctypes.byref(bmp_info), 0) # Moves the data into the buffer
 
-        ScreenCapture.write_bitmap_format(buffer, path)
+        ScreenCapture.stream(buffer, sock) if sock else ScreenCapture.write_bitmap_format(buffer, path)
 
         GDI32.DeleteObject(hbitmap) # Free memory because c doesn't know garbage collector
         GDI32.DeleteDC(hdc_mem) # Free memory because c doesn't know garbage collector
         USER32.ReleaseDC(0, hdc_screen) # Free memory because c doesn't know garbage collector
+
+    @staticmethod
+    def stream(buffer, sock):
+        tcp_by_size.TCP_DEBUG = False
+        send_with_size(sock, int_to_bytes(ScreenCapture.WIDTH)) # width 
+        send_with_size(sock, (-ScreenCapture.HEIGHT).to_bytes(4, 'little',signed = True)) # height in a format to be read top bottom
+        for i in range(0, ScreenCapture.WIDTH * abs(ScreenCapture.HEIGHT) * 3, MAX_DATA_CHUNK_SIZE):
+            chunk = buffer[i : i + min(MAX_DATA_CHUNK_SIZE, len(buffer) - i)]
+            send_with_size(sock, chunk)
+        tcp_by_size.TCP_DEBUG = True
+        send_with_size(sock, FTP_FINISH)
 
     @staticmethod
     def write_bitmap_format(buffer, path):
@@ -103,4 +118,4 @@ class ScreenCapture:
                 screenshot.write(b'\x00' * padding)  # pad to 4 bytes
 
 if __name__ == "__main__":
-    ScreenCapture.save_screenshot(r"C:\Users\roniy\Downloads\testing.bmp")
+    ScreenCapture.take_screenshot(path = r"C:\Users\roniy\Downloads\testing.bmp")

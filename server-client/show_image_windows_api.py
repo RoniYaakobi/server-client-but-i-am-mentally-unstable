@@ -1,7 +1,11 @@
 import ctypes
 from ctypes import wintypes
 import logging
-import math
+import threading, socket
+import math, time
+from ftp_protocol import FTP_FINISH
+import tcp_by_size
+from tcp_by_size import recv_by_size, send_with_size
 
 window_map = {}
 
@@ -56,41 +60,69 @@ class BITMAPINFO(ctypes.Structure):
         ("bmiColors", wintypes.DWORD * 1),
     ]
 
+class PAINTSTRUCT(ctypes.Structure):
+    _fields_ = [
+        ("hdc", wintypes.HDC),
+        ("fErase", wintypes.BOOL),
+        ("rcPaint_left", wintypes.LONG),
+        ("rcPaint_top", wintypes.LONG),
+        ("rcPaint_right", wintypes.LONG),
+        ("rcPaint_bottom", wintypes.LONG),
+        ("fRestore", wintypes.BOOL),
+        ("fIncUpdate", wintypes.BOOL),
+        ("rgbReserved", ctypes.c_byte * 32),
+    ]
+
 def py_wndproc(hwnd, msg, wparam, lparam):
     self_obj = window_map.get(hwnd)
-    logging.debug(f"Window Proc called: hwnd={hwnd}, msg={msg}, wparam={wparam}, lparam={lparam}")
+    logging.info(f"Window Proc called: hwnd={hwnd}, msg={msg}, wparam={wparam}, lparam={lparam}")
     if msg == 0x0002:  # WM_DESTROY
         logging.info("WM_DESTROY received, posting quit message")
+        if self_obj:
+            self_obj.DONE = True  # Signal threads to stop
         USER32.PostQuitMessage(0)
         return 0
     elif msg == 0x000F:  # WM_PAINT
+        
         logging.info("WM_PAINT received, performing BitBlt")
-        ps = ctypes.create_string_buffer(32)  # PAINTSTRUCT
+        USER32.BeginPaint.argtypes = [wintypes.HWND, ctypes.POINTER(PAINTSTRUCT)]
+        USER32.BeginPaint.restype = wintypes.HDC
+        USER32.EndPaint.argtypes = [wintypes.HWND, ctypes.POINTER(PAINTSTRUCT)]
+        USER32.EndPaint.restype = wintypes.BOOL
+        ps = PAINTSTRUCT()
         hdc = USER32.BeginPaint(hwnd, ctypes.byref(ps))
 
         GDI32.SetStretchBltMode(hdc, 4)  # HALFTONE
 
+        
         if self_obj and getattr(self_obj, "_hdc_mem", None):
-            res = GDI32.StretchBlt(
-                hdc,          # destination DC
-                0, 0, math.ceil(self_obj._w / SCALE_FACTOR), math.ceil(abs(self_obj._h) / SCALE_FACTOR),  # destination rectangle (scaled size)
-                self_obj._hdc_mem,   # source DC
-                0, 0, self_obj._w, abs(self_obj._h),  # source rectangle (original size)
-                SRCCOPY
-            )
-            logging.info(f"BitBlt returned: {res}")
+            with self_obj.bitmap_lock:
+                res = GDI32.StretchBlt(
+                    hdc,          # destination DC
+                    0, 0, math.ceil(self_obj._w / SCALE_FACTOR), math.ceil(abs(self_obj._h) / SCALE_FACTOR),  # destination rectangle (scaled size)
+                    self_obj._hdc_mem,   # source DC
+                    0, 0, self_obj._w, abs(self_obj._h),  # source rectangle (original size)
+                    SRCCOPY
+                )
+                logging.info(f"BitBlt returned: {res}")
+            
+
         else:
             logging.warning("Memory DC not ready, skipping BitBlt")
 
-        USER32.EndPaint(hwnd, ctypes.byref(ps))
+        logging.info(f"EndPaint")
+        x = USER32.EndPaint(hwnd, ctypes.byref(ps))
+        logging.info(f"EndPaint: {x}")
+        
         return 0
     
     
-
-    
     USER32.DefWindowProcW.argtypes = [wintypes.HWND, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM]
     USER32.DefWindowProcW.restype = wintypes.LRESULT
-    return USER32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+    x = USER32.DefWindowProcW(hwnd, msg, wparam, lparam)
+    logging.info(f"wndproc: {x}")
+    return x
 
 class ViewBitMap:
     def __init__(self):
@@ -104,10 +136,8 @@ class ViewBitMap:
         self._hdc_mem = 0
         self.path = r"C:\Users\roniy\Downloads\testing.bmp"
         self.define_window_class()
-        self.parse_as_bitmap_info()
-        self.open_window()
-        self.create_dib_section()
-        self.get_bitmap_pixels()
+
+    def show_map(self):
         USER32.ShowWindow(self._hwnd, 1)
         USER32.UpdateWindow(self._hwnd)
         self.handle_message()
@@ -185,6 +215,28 @@ class ViewBitMap:
         
         logging.info(f"Window created, hwnd={self._hwnd}")
 
+    def initialize_bitmap_info(self):
+        logging.info(f"Parsing bitmap info from {self.path}")
+        self._bmp_info = BITMAPINFO()
+
+        self._bmp_info.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)# length of header
+        self._bmp_info.bmiHeader.biWidth = self._w  # width of picture
+
+        # Height of picture, negative to make the bitmap be read from up down and not down up
+        self._bmp_info.bmiHeader.biHeight = -abs(self._h)  
+
+        # A field that is not used anymore
+        self._bmp_info.bmiHeader.biPlanes = 1
+
+        # Size of pixel, 3 bytes (RGB)
+        self._bmp_info.bmiHeader.biBitCount = 24
+        self._bmp_info.bmiHeader.biCompression = 0        # BI_RGB
+        self._bmp_info.bmiHeader.biSizeImage = 0          # for BI_RGB can be 0
+        self._bmp_info.bmiHeader.biXPelsPerMeter = 0
+        self._bmp_info.bmiHeader.biYPelsPerMeter = 0
+        self._bmp_info.bmiHeader.biClrUsed = 0
+        self._bmp_info.bmiHeader.biClrImportant = 0
+    
     def create_dib_section(self):
         logging.info("Creating DIB section")
         USER32.GetDC.argtypes = [wintypes.HWND]
@@ -241,7 +293,6 @@ class ViewBitMap:
         logging.info("DIBSection selected into memory DC")
 
 
-
     def handle_message(self):
         logging.info("Entering message loop")
         msg = wintypes.MSG()
@@ -249,11 +300,106 @@ class ViewBitMap:
             USER32.TranslateMessage(ctypes.byref(msg))
             USER32.DispatchMessageW(ctypes.byref(msg))
             
-    
-    def parse_as_bitmap_info(self):
-        logging.info(f"Parsing bitmap info from {self.path}")
-        self._bmp_info = BITMAPINFO()
+class ViewBitMapStream(ViewBitMap):
+    def __init__(self, sock):
+        super().__init__()
+        self.sock = sock
+        self.get_bitmap_info()
+        self.bitmap_lock = threading.Lock()  # Shared lock for bitmap access
+        self.open_window()
+        self.create_dib_section()
+        
+        self.DONE = False
+        
+        self.get_bitmap()
 
+        self.update = threading.Thread(target=self.update_routine, daemon=True)
+        self.update.start()
+
+        self.show_map()  # Blocks here until window closes
+
+        # Signal thread to stop and wait for it
+        self.DONE = True
+        self.update.join(timeout=2.0)  # Wait max 2 seconds
+    
+    def get_bitmap_info(self):
+        self._w = int.from_bytes(recv_by_size(self.sock), "little") 
+        self._h = int.from_bytes(recv_by_size(self.sock), "little", signed=True) 
+        self.initialize_bitmap_info()
+
+    def update_routine(self):
+        while not self.DONE:
+            time.sleep(0.02)
+            try:
+                send_with_size(self.sock, "show me")
+                tcp_by_size.TCP_DEBUG = False
+                with self.bitmap_lock:  # Protect bitmap access
+                    if not self.DONE:  # Double-check we're not shutting down
+                        self.update_bitmap()
+                tcp_by_size.TCP_DEBUG = True
+            except Exception as e:
+                logging.error(f"Error in update routine: {e}")
+                break
+
+    def update_bitmap(self):
+        # Don't call this if window is being destroyed
+        if self.DONE:
+            return
+            
+        # ignore metadata
+        _ = int.from_bytes(recv_by_size(self.sock), "little")
+        _ = int.from_bytes(recv_by_size(self.sock), "little", signed=True)
+
+        row_bytes = self._w * 3
+        height = abs(self._h)
+
+        pixel_ptr = self._ppvBits.value
+        offset = 0
+        
+        pixel_array = (ctypes.c_ubyte * (row_bytes * height)).from_address(pixel_ptr)
+
+        chunk = recv_by_size(self.sock)
+        while chunk != FTP_FINISH:
+            if chunk != b'':
+                length = len(chunk)
+                pixel_array[offset : offset + length] = chunk
+                offset += length
+            chunk = recv_by_size(self.sock)
+
+        # Only invalidate if window still exists
+        if not self.DONE and self._hwnd:
+            USER32.InvalidateRect(self._hwnd, None, False)  # Changed True to False
+
+    def get_bitmap(self):
+        row_bytes = self._w * 3
+        height = abs(self._h)
+        pixel_ptr = self._ppvBits.value
+        offset = 0
+        
+        pixel_array = (ctypes.c_ubyte * (row_bytes * height)).from_address(pixel_ptr)
+
+        with self.bitmap_lock:  # Use the shared lock
+            chunk = recv_by_size(self.sock)
+            while chunk != FTP_FINISH:
+                if chunk != b'':
+                    length = len(chunk)
+                    pixel_array[offset : offset + length] = chunk
+                    offset += length
+                chunk = recv_by_size(self.sock)
+
+                
+
+class ViewBitMapFile(ViewBitMap):
+    def __init__(self, path):
+        super().__init__()
+        self.path = path
+        self.parse_as_bitmap_info()
+        self.open_window()
+        self.create_dib_section()
+        self.get_bitmap_pixels()
+        self.show_map()
+
+    def parse_as_bitmap_info(self):
         with open(self.path, mode = "rb") as img:
             img.seek(18) # skip file herader and ignore bit map header size
             width_bytes = img.read(4) # get the bytes of the width
@@ -263,24 +409,7 @@ class ViewBitMap:
             self._h = int.from_bytes(height_bytes, "little", signed=True)
             logging.info(f"Bitmap dimensions: width={self._w}, height={self._h}")
 
-
-            self._bmp_info.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)# length of header
-            self._bmp_info.bmiHeader.biWidth = self._w  # width of picture
-
-            # Height of picture, negative to make the bitmap be read from up down and not down up
-            self._bmp_info.bmiHeader.biHeight = -abs(self._h)  
-
-            # A field that is not used anymore
-            self._bmp_info.bmiHeader.biPlanes = 1
-
-            # Size of pixel, 3 bytes (RGB)
-            self._bmp_info.bmiHeader.biBitCount = 24
-            self._bmp_info.bmiHeader.biCompression = 0        # BI_RGB
-            self._bmp_info.bmiHeader.biSizeImage = 0          # for BI_RGB can be 0
-            self._bmp_info.bmiHeader.biXPelsPerMeter = 0
-            self._bmp_info.bmiHeader.biYPelsPerMeter = 0
-            self._bmp_info.bmiHeader.biClrUsed = 0
-            self._bmp_info.bmiHeader.biClrImportant = 0
+        self.initialize_bitmap_info()
 
     def get_bitmap_pixels(self):
         logging.info("Loading bitmap pixels into DIBSection")
@@ -312,6 +441,3 @@ class ViewBitMap:
                 # Copy row_data into memory
                 pixel_array[dest_row:dest_row + row_bytes] = row_data
         logging.info("Bitmap pixels loaded successfully")
-logging.basicConfig(level = logging.INFO)
-logging.info("Starting ViewBitMap")
-ViewBitMap()
